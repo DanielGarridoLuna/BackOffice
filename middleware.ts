@@ -2,10 +2,12 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
+  // Crear la respuesta base
+  const supabaseResponse = NextResponse.next({
     request,
   })
 
+  // Crear el cliente de Supabase
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -24,15 +26,16 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  // Obtener sesión (solo lectura, no escritura)
+  const { data: { session } } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
-  // Si no hay usuario y está intentando acceder a /admin, redirigir a login
+  // Redirecciones
   if (!user && request.nextUrl.pathname.startsWith('/admin')) {
     const redirectUrl = new URL('/login', request.url)
     return NextResponse.redirect(redirectUrl)
   }
 
-  // Si hay usuario y está en login, redirigir a admin
   if (user && request.nextUrl.pathname === '/login') {
     const redirectUrl = new URL('/admin/sucursales', request.url)
     return NextResponse.redirect(redirectUrl)

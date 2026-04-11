@@ -1,12 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,16 +18,18 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { supabase } from '@/lib/supabase/client'
-import { NuevoProducto } from '@/types'
+import { Producto, NuevoProducto } from '@/types'
 
 interface ProductoDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
   onSuccess: () => void
+  producto?: Producto | null
 }
 
 type CategoriaProducto = 'agua' | 'leche' | 'especial' | 'agua_fresca'
 
-export function ProductoDialog({ onSuccess }: ProductoDialogProps) {
-  const [open, setOpen] = useState(false)
+export function ProductoDialog({ open, onOpenChange, onSuccess, producto }: ProductoDialogProps) {
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState<NuevoProducto>({
     nombre: '',
@@ -36,22 +37,48 @@ export function ProductoDialog({ onSuccess }: ProductoDialogProps) {
     precio: 0,
   })
 
+  const isEditing = !!producto
+
+  useEffect(() => {
+    if (open && producto) {
+      setFormData({
+        nombre: producto.nombre,
+        categoria: producto.categoria,
+        precio: producto.precio,
+      })
+    } else if (!open) {
+      setFormData({ nombre: '', categoria: 'agua', precio: 0 })
+    }
+  }, [open, producto])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
 
     try {
-      const { error } = await supabase
-        .from('productos')
-        .insert([{ ...formData, activo: true }])
+      if (isEditing && producto) {
+        const { error } = await supabase
+          .from('productos')
+          .update({
+            nombre: formData.nombre,
+            categoria: formData.categoria,
+            precio: formData.precio,
+          })
+          .eq('id', producto.id)
 
-      if (error) throw error
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('productos')
+          .insert([{ ...formData, activo: true }])
 
-      setFormData({ nombre: '', categoria: 'agua', precio: 0 })
-      setOpen(false)
+        if (error) throw error
+      }
+
+      onOpenChange(false)
       onSuccess()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Error al crear el producto')
+      alert(err instanceof Error ? err.message : `Error al ${isEditing ? 'actualizar' : 'crear'} el producto`)
     } finally {
       setLoading(false)
     }
@@ -65,13 +92,12 @@ export function ProductoDialog({ onSuccess }: ProductoDialogProps) {
   ] as const
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>Nuevo Producto</Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Crear Nuevo Producto</DialogTitle>
+          <DialogTitle>
+            {isEditing ? 'Editar Producto' : 'Crear Nuevo Producto'}
+          </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -116,11 +142,11 @@ export function ProductoDialog({ onSuccess }: ProductoDialogProps) {
             />
           </div>
           <div className="flex justify-end gap-3">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
             <Button type="submit" disabled={loading}>
-              {loading ? 'Guardando...' : 'Guardar'}
+              {loading ? 'Guardando...' : (isEditing ? 'Actualizar' : 'Guardar')}
             </Button>
           </div>
         </form>

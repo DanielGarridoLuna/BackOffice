@@ -11,15 +11,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Pencil, Archive, RotateCw } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -28,7 +20,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { supabase } from '@/lib/supabase/client'
-import { Producto, NuevoProducto } from '@/types'
+import { Producto } from '@/types'
+import { ProductoDialog } from './producto-dialog'
 
 type CategoriaProducto = 'agua' | 'leche' | 'especial' | 'agua_fresca'
 
@@ -39,20 +32,19 @@ export function ProductosTable() {
   const [error, setError] = useState('')
   const [categoriaFiltro, setCategoriaFiltro] = useState<string>('todos')
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [formLoading, setFormLoading] = useState(false)
-  const [formData, setFormData] = useState<NuevoProducto>({
-    nombre: '',
-    categoria: 'agua',
-    precio: 0,
-  })
+  const [editingProducto, setEditingProducto] = useState<Producto | null>(null)
+  const [mostrarArchivados, setMostrarArchivados] = useState(false)
 
   const fetchProductos = async () => {
     try {
       setLoading(true)
-      const { data, error: supabaseError } = await supabase
-        .from('productos')
-        .select('*')
-        .order('nombre')
+      let query = supabase.from('productos').select('*')
+      
+      if (!mostrarArchivados) {
+        query = query.eq('activo', true)
+      }
+      
+      const { data, error: supabaseError } = await query.order('nombre')
 
       if (supabaseError) throw supabaseError
       setProductos(data || [])
@@ -63,30 +55,39 @@ export function ProductosTable() {
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setFormLoading(true)
-
+  const archivarProducto = async (id: string) => {
+    if (!confirm('¿Archivar este producto? Dejará de mostrarse en la lista')) return
+    
     try {
-      const { error: supabaseError } = await supabase
+      const { error } = await supabase
         .from('productos')
-        .insert([{ ...formData, activo: true }])
+        .update({ activo: false })
+        .eq('id', id)
 
-      if (supabaseError) throw supabaseError
-
-      setFormData({ nombre: '', categoria: 'agua', precio: 0 })
-      setDialogOpen(false)
+      if (error) throw error
       fetchProductos()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Error al crear el producto')
-    } finally {
-      setFormLoading(false)
+      alert(err instanceof Error ? err.message : 'Error al archivar producto')
+    }
+  }
+
+  const restaurarProducto = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('productos')
+        .update({ activo: true })
+        .eq('id', id)
+
+      if (error) throw error
+      fetchProductos()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al restaurar producto')
     }
   }
 
   useEffect(() => {
     fetchProductos()
-  }, [])
+  }, [mostrarArchivados])
 
   useEffect(() => {
     if (categoriaFiltro === 'todos') {
@@ -107,86 +108,40 @@ export function ProductosTable() {
     { value: 'agua_fresca', label: 'Agua Fresca' },
   ] as const
 
-  const categoriasProducto = categorias.filter(c => c.value !== 'todos')
-
   return (
     <div className="space-y-4">
-      <div className="flex justify-between">
-        <div className="w-64">
-          <Select value={categoriaFiltro} onValueChange={setCategoriaFiltro}>
-            <SelectTrigger>
-              <SelectValue placeholder="Filtrar por categoría" />
-            </SelectTrigger>
-            <SelectContent>
-              {categorias.map((cat) => (
-                <SelectItem key={cat.value} value={cat.value}>
-                  {cat.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      <div className="flex justify-between items-center">
+        <div className="flex gap-4 items-center">
+          <div className="w-64">
+            <Select value={categoriaFiltro} onValueChange={setCategoriaFiltro}>
+              <SelectTrigger>
+                <SelectValue placeholder="Filtrar por categoría" />
+              </SelectTrigger>
+              <SelectContent>
+                {categorias.map((cat) => (
+                  <SelectItem key={cat.value} value={cat.value}>
+                    {cat.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={mostrarArchivados}
+              onChange={(e) => setMostrarArchivados(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            Mostrar archivados
+          </label>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>Nuevo Producto</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Crear Nuevo Producto</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="nombre">Nombre</Label>
-                <Input
-                  id="nombre"
-                  value={formData.nombre}
-                  onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-                  required
-                  placeholder="Ej: Paleta de Piñón"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="categoria">Categoría</Label>
-                <Select
-                  value={formData.categoria}
-                  onValueChange={(value: string) => setFormData({ ...formData, categoria: value as CategoriaProducto })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona una categoría" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categoriasProducto.map((cat) => (
-                      <SelectItem key={cat.value} value={cat.value}>
-                        {cat.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="precio">Precio (MXN)</Label>
-                <Input
-                  id="precio"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={formData.precio}
-                  onChange={(e) => setFormData({ ...formData, precio: parseFloat(e.target.value) })}
-                  required
-                  placeholder="0.00"
-                />
-              </div>
-              <div className="flex justify-end gap-3">
-                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" disabled={formLoading}>
-                  {formLoading ? 'Guardando...' : 'Guardar'}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={() => {
+          setEditingProducto(null)
+          setDialogOpen(true)
+        }}>
+          Nuevo Producto
+        </Button>
       </div>
       <div className="rounded-md border">
         <Table>
@@ -196,12 +151,13 @@ export function ProductosTable() {
               <TableHead>Categoría</TableHead>
               <TableHead>Precio</TableHead>
               <TableHead>Estado</TableHead>
+              <TableHead className="w-[100px]">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredProductos.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center">
+                <TableCell colSpan={5} className="text-center">
                   No hay productos registrados
                 </TableCell>
               </TableRow>
@@ -213,8 +169,41 @@ export function ProductosTable() {
                   <TableCell>${producto.precio.toFixed(2)}</TableCell>
                   <TableCell>
                     <Badge variant={producto.activo ? 'default' : 'secondary'}>
-                      {producto.activo ? 'Activo' : 'Inactivo'}
+                      {producto.activo ? 'Activo' : 'Archivado'}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      {producto.activo ? (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setEditingProducto(producto)
+                              setDialogOpen(true)
+                            }}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => archivarProducto(producto.id)}
+                          >
+                            <Archive className="h-4 w-4" />
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => restaurarProducto(producto.id)}
+                        >
+                          <RotateCw className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -222,6 +211,17 @@ export function ProductosTable() {
           </TableBody>
         </Table>
       </div>
+
+      <ProductoDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        producto={editingProducto}
+        onSuccess={() => {
+          setDialogOpen(false)
+          setEditingProducto(null)
+          fetchProductos()
+        }}
+      />
     </div>
   )
 }

@@ -12,10 +12,13 @@ export const createClient = async () => {
         getAll() {
           return cookieStore.getAll()
         },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options)
-          })
+        setAll() {
+          // No hacer NADA - las cookies no se modifican desde Server Components
+          // Las modificaciones de cookies solo deben ocurrir en:
+          // - middleware.ts
+          // - Server Actions
+          // - Route Handlers
+          return
         },
       },
     }

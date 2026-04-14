@@ -1,6 +1,6 @@
 'use client'
 
-import { Store, Package, LogOut } from 'lucide-react'
+import { Store, Package, LogOut, Users, Receipt } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
@@ -22,6 +22,8 @@ export default function AdminLayout({
   const navItems = [
     { href: '/admin/sucursales', label: 'Sucursales', icon: Store },
     { href: '/admin/productos', label: 'Productos', icon: Package },
+    { href: '/admin/empleados', label: 'Empleados', icon: Users },
+    { href: '/admin/ventas', label: 'Ventas', icon: Receipt },
   ]
 
   return (

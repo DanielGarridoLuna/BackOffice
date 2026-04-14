@@ -1,5 +1,5 @@
 'use client'
-
+import React from 'react'
 import { useEffect, useState } from 'react'
 import {
   Table,
@@ -20,9 +20,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { supabase } from '@/lib/supabase/client'
-import { Venta, Sucursal, Empleado, VentaDetalle, Producto } from '@/types'
+import { Venta, Sucursal, VentaDetalle } from '@/types'
 
-type VentaWithRelations = {
+type VentaDetalleConProducto = VentaDetalle & {
+  producto_nombre: string
+}
+
+type VentaConDetalles = {
   id: string
   folio: string
   sucursal_id: string
@@ -32,30 +36,9 @@ type VentaWithRelations = {
   metodo_pago: 'efectivo' | 'tarjeta' | 'transferencia'
   activo: boolean
   created_at: string
-  sucursal: { id: string; nombre: string } | null
-  empleado: { id: string; nombre: string } | null
-}
-
-type VentaDetalleWithProduct = {
-  id: string
-  venta_id: string
-  producto_id: string
-  cantidad: number
-  precio_unitario: number
-  subtotal: number
-  producto: { id: string; nombre: string } | null
-}
-
-type VentaConDetalles = VentaWithRelations & {
   sucursal_nombre: string
   empleado_nombre: string
-  detalles: {
-    id: string
-    cantidad: number
-    precio_unitario: number
-    subtotal: number
-    producto_nombre: string
-  }[]
+  detalles: VentaDetalleConProducto[]
 }
 
 export function VentasTable() {
@@ -70,49 +53,84 @@ export function VentasTable() {
   const fetchVentas = async () => {
     try {
       setLoading(true)
-      
+
       const { data: ventasData, error: ventasError } = await supabase
         .from('ventas')
-        .select(`
-          *,
-          sucursal:sucursales(id, nombre),
-          empleado:empleados(id, nombre)
-        `)
+        .select('*')
         .eq('activo', true)
         .order('fecha', { ascending: false })
 
       if (ventasError) throw ventasError
 
-      const formattedVentas: VentaConDetalles[] = []
-      
-      for (const v of (ventasData || [])) {
-        const venta = v as VentaWithRelations
-        
+      if (!ventasData) {
+        setVentas([])
+        return
+      }
+
+      const sucursalesIds = [...new Set(ventasData.map((v: Venta) => v.sucursal_id))]
+      const empleadosIds = [...new Set(ventasData.map((v: Venta) => v.empleado_id))]
+
+      const { data: sucursalesData } = await supabase
+        .from('sucursales')
+        .select('id, nombre')
+        .in('id', sucursalesIds)
+
+      const { data: empleadosData } = await supabase
+        .from('empleados')
+        .select('id, nombre')
+        .in('id', empleadosIds)
+
+      const sucursalesMap = new Map<string, string>()
+      sucursalesData?.forEach((s: { id: string; nombre: string }) => {
+        sucursalesMap.set(s.id, s.nombre)
+      })
+
+      const empleadosMap = new Map<string, string>()
+      empleadosData?.forEach((e: { id: string; nombre: string }) => {
+        empleadosMap.set(e.id, e.nombre)
+      })
+
+      const ventasConDetalles: VentaConDetalles[] = []
+
+      for (const venta of ventasData) {
         const { data: detallesData } = await supabase
           .from('ventas_detalle')
-          .select(`
-            *,
-            producto:productos(id, nombre)
-          `)
+          .select('*, producto:productos(id, nombre)')
           .eq('venta_id', venta.id)
 
-        const detalles = (detallesData || []).map((d: VentaDetalleWithProduct) => ({
-          id: d.id,
-          cantidad: d.cantidad,
-          precio_unitario: d.precio_unitario,
-          subtotal: d.subtotal,
-          producto_nombre: d.producto?.nombre || 'Producto eliminado'
-        }))
+        const detalles: VentaDetalleConProducto[] = (detallesData || []).map((d) => {
+          let productoNombre = 'Producto eliminado'
+          if (d.producto && typeof d.producto === 'object' && 'nombre' in d.producto) {
+            productoNombre = (d.producto as { nombre: string }).nombre
+          }
+          return {
+            id: d.id,
+            venta_id: d.venta_id,
+            producto_id: d.producto_id,
+            cantidad: d.cantidad,
+            precio_unitario: d.precio_unitario,
+            subtotal: d.subtotal,
+            producto_nombre: productoNombre
+          }
+        })
 
-        formattedVentas.push({
-          ...venta,
-          sucursal_nombre: venta.sucursal?.nombre || 'N/A',
-          empleado_nombre: venta.empleado?.nombre || 'N/A',
-          detalles
+        ventasConDetalles.push({
+          id: venta.id,
+          folio: venta.folio,
+          sucursal_id: venta.sucursal_id,
+          empleado_id: venta.empleado_id,
+          fecha: venta.fecha,
+          total: venta.total,
+          metodo_pago: venta.metodo_pago as 'efectivo' | 'tarjeta' | 'transferencia',
+          activo: venta.activo,
+          created_at: venta.created_at,
+          sucursal_nombre: sucursalesMap.get(venta.sucursal_id) || 'N/A',
+          empleado_nombre: empleadosMap.get(venta.empleado_id) || 'N/A',
+          detalles: detalles
         })
       }
 
-      setVentas(formattedVentas)
+      setVentas(ventasConDetalles)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar ventas')
     } finally {
@@ -204,8 +222,8 @@ export function VentasTable() {
               </TableRow>
             ) : (
               filteredVentas.map((venta) => (
-                <>
-                  <TableRow key={venta.id} className="cursor-pointer hover:bg-muted/50">
+                <React.Fragment key={venta.id}>
+                  <TableRow className="cursor-pointer hover:bg-muted/50">
                     <TableCell>
                       <Button
                         variant="ghost"
@@ -265,7 +283,7 @@ export function VentasTable() {
                       </TableCell>
                     </TableRow>
                   )}
-                </>
+                </React.Fragment>
               ))
             )}
           </TableBody>
